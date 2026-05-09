@@ -1,0 +1,59 @@
+services:
+  sys-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sys-ai
+    container_name: sys-ai
+    restart: unless-stopped
+    networks:
+      - devantspot_shared
+    environment:
+      # LLM
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-meta-llama/llama-3.1-8b-instruct:free}
+      - OPENROUTER_URL=https://openrouter.ai/api/v1/chat/completions
+
+      # Restaurant service — direct container-to-container call on shared network
+      - RESTAURANT_SERVICE_URL=https://sys-backend-restaurant-n-shopping.serveyourstay.com:8443
+
+      # Auth — same secret used by the restaurant service to validate InternalJWTs
+      - INTERNAL_JWT_SECRET=${INTERNAL_JWT_SECRET}
+      - AI_SERVICE_ACCOUNT_ID=${AI_SERVICE_ACCOUNT_ID:-00000000-0000-0000-0000-000000000001}
+
+      # mTLS — the AI service presents a client cert to the restaurant service
+      - TLS_ENABLED=true
+      - TLS_CA_CERT=/etc/certs/ca.crt
+      - TLS_CERT=/etc/certs/client.crt
+      - TLS_KEY=/etc/certs/client.key
+
+      # Worker
+      - POLL_INTERVAL_SECONDS=${AI_POLL_INTERVAL_SECONDS:-30}
+      - REVIEW_BATCH_SIZE=${AI_REVIEW_BATCH_SIZE:-10}
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+
+      # step-ca
+      - STEP_CA_URL=${STEP_CA_URL:-https://step-ca.devantspot.internal:9000}
+      - STEP_CA_FINGERPRINT=${STEP_CA_FINGERPRINT}
+      - STEP_PROVISIONER=${STEP_PROVISIONER:-service-accounts}
+
+    volumes:
+      - ${INFRASTRUCTURE_PATH:-../sys-infrastructure}/step-ca/provisioner.password:/etc/step/provisioner.password:ro
+
+    healthcheck:
+      test:
+        - "CMD"
+        - "sh"
+        - "-c"
+        - "pgrep server > /dev/null"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  devantspot_shared:
+    external: true
+    name: devantspot_shared
